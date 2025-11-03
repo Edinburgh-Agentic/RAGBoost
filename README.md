@@ -1,4 +1,4 @@
 # RAGBoost
-We are refactoring our code base and will release it soon.
+We are refactoring the codebase and will release it shortly.
 
 Stay tuned!
