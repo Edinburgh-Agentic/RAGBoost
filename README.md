@@ -1,4 +1,4 @@
 # RAGBoost
-We are aligning the documentation and plan to release shortly.
+We are preparing the documents and plan to release shortly.
 
 Stay tuned!
