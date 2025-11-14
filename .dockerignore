@@ -1,0 +1,12 @@
+# Ignore everything in the build context
+*
+__pycache__
+
+!ragboost/
+!examples/
+!tests/
+!docs/
+!assets/
+!README.md
+!pyproject.toml
+!requirements.txt

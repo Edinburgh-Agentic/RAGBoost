@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragboost"
+version = "0.0.1"
+description = "Boosting Retrieval-Augmented Generation with Context Reordering"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Yinsicheng Jiang" }, { name = "Chivier Humber" }]
+license = { text = "MIT" }
+keywords = ["feed", "reader", "tutorial"]
+dynamic = ["dependencies"]  # <- pull from requirements.txt
+
+[tool.setuptools.packages.find]
+include = ["ragboost*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[project.urls]
+Homepage = "https://github.com/SecretSettler/RAGBoost"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+
+[project.optional-dependencies]
+dev = ["black", "bumpver", "isort", "pip-tools", "pytest", "ipython"]
+
+[tool.bumpver]
+current_version = "1.5.2"
+version_pattern = "MAJOR.MINOR.PATCH"
+commit_message  = "Bump version {old_version} -> {new_version}"
+commit          = true
+tag             = true
+push            = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
+
+[tool.black]
+line-length = 120
+target-version = ['py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
