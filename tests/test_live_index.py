@@ -19,11 +19,9 @@ class TestLiveIndexInitialization:
         index = LiveContextIndex(
             alpha=0.005,
             use_gpu=False,
-            max_tokens=10000
         )
         
         assert index is not None
-        assert index._max_tokens == 10000
         assert index.is_live is False
     
     def test_live_index_with_different_configs(self):
@@ -31,9 +29,9 @@ class TestLiveIndexInitialization:
         from ragboost.server.live_index import LiveContextIndex
         
         configs = [
-            {"alpha": 0.001, "max_tokens": 5000},
-            {"alpha": 0.01, "max_tokens": 20000},
-            {"alpha": 0.005, "max_tokens": None},
+            {"alpha": 0.001},
+            {"alpha": 0.01},
+            {"alpha": 0.005},
         ]
         
         for config in configs:
@@ -247,7 +245,7 @@ class TestLiveIndexRequestTracking:
         """Test that request IDs are auto-generated during build."""
         from ragboost.server.live_index import LiveContextIndex
         
-        index = LiveContextIndex(use_gpu=False, max_tokens=10000)
+        index = LiveContextIndex(use_gpu=False)
         
         contexts = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
         result = index.build_and_schedule(contexts)
