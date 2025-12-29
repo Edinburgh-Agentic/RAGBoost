@@ -23,7 +23,24 @@ dependencies = { file = ["requirements.txt"] }
 Homepage = "https://github.com/SecretSettler/RAGBoost"
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--tb=short", "--strict-markers", "--import-mode=importlib"]
+asyncio_mode = "auto"
+timeout = 300
+minversion = "7.0"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU",
+    "integration: marks integration tests",
+    "unit: marks unit tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
 
 [project.optional-dependencies]
 dev = ["black", "bumpver", "isort", "pip-tools", "pytest", "ipython"]
