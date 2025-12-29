@@ -3,15 +3,15 @@
 Testing and benchmarking suite for optimized CPU distance computation.
 """
 
+import pytest
 import numpy as np
-import time
 from ragboost.context_index.compute_distance_cpu import (
     prepare_contexts_for_cpu,
     compute_distance_optimized,
     compute_distance_matrix_cpu_optimized,
 )
 
-from test_utils import generate_contexts
+from tests.test_utils import generate_contexts
 
 
 def compute_distance_naive(context_i, context_j, alpha):
@@ -45,192 +45,123 @@ def compute_distance_naive(context_i, context_j, alpha):
     return overlap_term + position_term
 
 
-def verify_correctness(contexts, alpha=0.005, num_test=50):
+class TestCPUDistanceCorrectness:
     """Verify optimized implementation matches naive implementation."""
-    print(f"\n{'='*70}")
-    print(f"CORRECTNESS VERIFICATION")
-    print(f"{'='*70}")
     
-    test_contexts = contexts[:num_test]
-    n = len(test_contexts)
-    num_pairs = n * (n - 1) // 2
+    @pytest.fixture
+    def contexts(self):
+        """Generate test contexts."""
+        return generate_contexts(100, avg_chunks=20, seed=42)
     
-    print(f"Testing {num_pairs:,} pairs...")
+    def test_optimized_matches_naive(self, contexts):
+        """Verify optimized implementation matches naive implementation."""
+        alpha = 0.005
+        num_test = 50
+        test_contexts = contexts[:num_test]
+        n = len(test_contexts)
+        
+        # Prepare data for optimized version
+        chunk_ids, original_positions, lengths, offsets = prepare_contexts_for_cpu(test_contexts)
+        
+        # Compute with both methods
+        naive_results = []
+        optimized_results = []
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                naive_dist = compute_distance_naive(test_contexts[i], test_contexts[j], alpha)
+                optimized_dist = compute_distance_optimized(
+                    chunk_ids, original_positions, lengths, offsets, i, j, alpha
+                )
+                
+                naive_results.append(naive_dist)
+                optimized_results.append(optimized_dist)
+        
+        # Compare
+        naive_results = np.array(naive_results)
+        optimized_results = np.array(optimized_results)
+        
+        diffs = np.abs(naive_results - optimized_results)
+        max_diff = diffs.max()
+        
+        assert max_diff < 1e-6, f"Max difference {max_diff} exceeds tolerance"
     
-    # Prepare data for optimized version
-    chunk_ids, original_positions, lengths, offsets = prepare_contexts_for_cpu(test_contexts)
-    
-    # Compute with both methods
-    naive_results = []
-    optimized_results = []
-    
-    for i in range(n):
-        for j in range(i + 1, n):
-            naive_dist = compute_distance_naive(test_contexts[i], test_contexts[j], alpha)
-            optimized_dist = compute_distance_optimized(
-                chunk_ids, original_positions, lengths, offsets, i, j, alpha
-            )
-            
-            naive_results.append(naive_dist)
-            optimized_results.append(optimized_dist)
-    
-    # Compare
-    naive_results = np.array(naive_results)
-    optimized_results = np.array(optimized_results)
-    
-    diffs = np.abs(naive_results - optimized_results)
-    max_diff = diffs.max()
-    mean_diff = diffs.mean()
-    
-    print(f"\nResults:")
-    print(f"  Max difference: {max_diff:.10f}")
-    print(f"  Mean difference: {mean_diff:.10f}")
-    print(f"  Naive range: [{naive_results.min():.6f}, {naive_results.max():.6f}]")
-    print(f"  Optimized range: [{optimized_results.min():.6f}, {optimized_results.max():.6f}]")
-    
-    if max_diff < 1e-6:
-        print(f"\n✓ PASSED: Results match within tolerance")
-        return True
-    else:
-        print(f"\n✗ FAILED: Results differ by more than tolerance")
-        return False
+    @pytest.mark.parametrize("alpha", [0.001, 0.005, 0.01])
+    def test_various_alpha_values(self, contexts, alpha):
+        """Test with different alpha values."""
+        test_contexts = contexts[:20]
+        n = len(test_contexts)
+        
+        chunk_ids, original_positions, lengths, offsets = prepare_contexts_for_cpu(test_contexts)
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                naive_dist = compute_distance_naive(test_contexts[i], test_contexts[j], alpha)
+                optimized_dist = compute_distance_optimized(
+                    chunk_ids, original_positions, lengths, offsets, i, j, alpha
+                )
+                
+                assert abs(naive_dist - optimized_dist) < 1e-6
 
 
-def benchmark_single_threaded(contexts, alpha=0.005, sample_size=1000):
-    """Benchmark single-threaded performance: naive vs optimized."""
-    print(f"\n{'='*70}")
-    print(f"SINGLE-THREADED BENCHMARK")
-    print(f"{'='*70}")
+class TestCPUDistancePerformance:
+    """Benchmark single-threaded performance."""
     
-    sample_contexts = contexts[:sample_size]
-    n = len(sample_contexts)
-    num_pairs = n * (n - 1) // 2
+    @pytest.fixture
+    def large_contexts(self):
+        """Generate larger context set for benchmarking."""
+        return generate_contexts(1000, avg_chunks=20, seed=42)
     
-    print(f"Sample size: {n} contexts ({num_pairs:,} pairs)")
-    
-    # Naive method
-    print(f"\n[1/2] Naive method (dict/set)...")
-    start = time.time()
-    
-    for i in range(n):
-        for j in range(i + 1, n):
-            _ = compute_distance_naive(sample_contexts[i], sample_contexts[j], alpha)
-    
-    time_naive = time.time() - start
-    rate_naive = num_pairs / time_naive
-    
-    print(f"  Time: {time_naive:.3f}s")
-    print(f"  Rate: {rate_naive:,.0f} pairs/sec")
-    
-    # Optimized method
-    print(f"\n[2/2] Optimized method (merge)...")
-    prep_start = time.time()
-    chunk_ids, original_positions, lengths, offsets = prepare_contexts_for_cpu(sample_contexts)
-    prep_time = time.time() - prep_start
-    
-    start = time.time()
-    for i in range(n):
-        for j in range(i + 1, n):
-            _ = compute_distance_optimized(
-                chunk_ids, original_positions, lengths, offsets, i, j, alpha
-            )
-    
-    time_optimized = time.time() - start
-    rate_optimized = num_pairs / time_optimized
-    
-    print(f"  Prep time: {prep_time:.3f}s")
-    print(f"  Compute time: {time_optimized:.3f}s")
-    print(f"  Rate: {rate_optimized:,.0f} pairs/sec")
-    
-    # Summary
-    speedup = rate_optimized / rate_naive
-    time_savings = (time_naive - time_optimized) / time_naive * 100
-    
-    print(f"\n{'='*70}")
-    print(f"Summary:")
-    print(f"{'='*70}")
-    print(f"Speedup: {speedup:.2f}x faster")
-    print(f"Time savings: {time_savings:.1f}%")
-    print(f"For {num_pairs:,} pairs:")
-    print(f"  Naive: {time_naive:.1f}s")
-    print(f"  Optimized: {time_optimized:.1f}s (+ {prep_time:.1f}s prep)")
+    @pytest.mark.slow
+    def test_optimized_faster_than_naive(self, large_contexts):
+        """Verify optimized version is faster than naive."""
+        import time
+        alpha = 0.005
+        sample_contexts = large_contexts[:500]
+        n = len(sample_contexts)
+        
+        # Naive method
+        start = time.time()
+        for i in range(n):
+            for j in range(i + 1, n):
+                _ = compute_distance_naive(sample_contexts[i], sample_contexts[j], alpha)
+        time_naive = time.time() - start
+        
+        # Optimized method
+        chunk_ids, original_positions, lengths, offsets = prepare_contexts_for_cpu(sample_contexts)
+        
+        start = time.time()
+        for i in range(n):
+            for j in range(i + 1, n):
+                _ = compute_distance_optimized(
+                    chunk_ids, original_positions, lengths, offsets, i, j, alpha
+                )
+        time_optimized = time.time() - start
+        
+        # Optimized should be faster
+        assert time_optimized < time_naive, f"Optimized ({time_optimized:.2f}s) should be faster than naive ({time_naive:.2f}s)"
 
 
-def test_full_pipeline(num_contexts=5000):
+class TestFullPipeline:
     """Test the full multi-threaded pipeline."""
-    print(f"\n{'='*70}")
-    print(f"FULL PIPELINE TEST")
-    print(f"{'='*70}")
     
-    # Generate contexts
-    print("\n[1/2] Generating contexts...")
-    contexts = generate_contexts(num_contexts, avg_chunks=20, seed=42)
-    
-    # Compute matrix
-    print("\n[2/2] Computing distance matrix...")
-    condensed = compute_distance_matrix_cpu_optimized(
-        contexts, 
-        alpha=0.005, 
-        num_workers=None,  # Use all cores
-        batch_size=1000
-    )
-    
-    # Verify result
-    print(f"\n{'='*70}")
-    print(f"Distance Matrix Statistics:")
-    print(f"{'='*70}")
-    print(f"Shape: condensed vector of length {len(condensed):,}")
-    print(f"Min: {condensed.min():.6f}")
-    print(f"Max: {condensed.max():.6f}")
-    print(f"Mean: {condensed.mean():.6f}")
-    print(f"Median: {np.median(condensed):.6f}")
-    print(f"Std: {condensed.std():.6f}")
-    
-    # Check for issues
-    if condensed.max() > 3.0:
-        print(f"\n⚠ WARNING: Max distance seems high")
-    elif np.any(condensed < 0):
-        print(f"\n⚠ WARNING: Found negative distances")
-    else:
-        print(f"\n✓ Distance range looks correct!")
-    
-    return condensed
-
-
-def main():
-    """Run all tests."""
-    print("="*70)
-    print(" OPTIMIZED CPU DISTANCE COMPUTATION - TEST SUITE")
-    print("="*70)
-    
-    # Generate test data
-    print("\nGenerating test data...")
-    contexts = generate_contexts(10000, avg_chunks=20, seed=42)
-    
-    # Test 1: Correctness
-    print("\n" + "="*70)
-    print("TEST 1: Correctness Verification")
-    print("="*70)
-    if not verify_correctness(contexts, num_test=50):
-        print("\n✗ Correctness test failed! Aborting.")
-        return
-    
-    # Test 2: Single-threaded benchmark
-    print("\n" + "="*70)
-    print("TEST 2: Single-threaded Performance")
-    print("="*70)
-    benchmark_single_threaded(contexts, sample_size=1000)
-    
-    # Test 3: Full pipeline
-    print("\n" + "="*70)
-    print("TEST 3: Full Multi-threaded Pipeline")
-    print("="*70)
-    condensed = test_full_pipeline(num_contexts=5000)
-    
-    print("\n" + "="*70)
-    print("ALL TESTS COMPLETED!")
-    print("="*70)
-
-
-if __name__ == "__main__":
-    main()
+    @pytest.mark.slow
+    def test_distance_matrix_computation(self):
+        """Test the full multi-threaded pipeline."""
+        num_contexts = 1000
+        contexts = generate_contexts(num_contexts, avg_chunks=20, seed=42)
+        
+        # Compute matrix
+        condensed = compute_distance_matrix_cpu_optimized(
+            contexts, 
+            alpha=0.005, 
+            num_workers=None,
+            batch_size=1000
+        )
+        
+        # Verify result
+        expected_length = num_contexts * (num_contexts - 1) // 2
+        assert len(condensed) == expected_length, f"Expected {expected_length}, got {len(condensed)}"
+        assert condensed.min() >= 0, "Distances should be non-negative"
+        assert condensed.max() <= 3.0, f"Max distance {condensed.max()} seems too high"
+        assert not np.any(np.isnan(condensed)), "Found NaN values in distance matrix"
