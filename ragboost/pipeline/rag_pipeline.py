@@ -391,7 +391,6 @@ class RAGPipeline:
             groups.append({
                 "group_id": group_id,
                 "group_size": len(items),
-                "group_score": score,
                 "items": items
             })
         

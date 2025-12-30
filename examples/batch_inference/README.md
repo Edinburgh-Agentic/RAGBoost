@@ -1,6 +1,6 @@
-# RAGBoost Batch Inference Examples
+# RAGBoost Batch Preparation
 
-This directory contains examples for optimized batch inference with RAGBoost.
+This directory contains a CLI tool for preparing optimized batches from retrieval results.
 
 ## Overview
 
@@ -9,53 +9,49 @@ RAGBoost reorders retrieved contexts to maximize prefix sharing, which significa
 ## Files
 
 - **`prepare_batch.py`** - Optimize and group retrieval results for batch inference
-- **`sglang_inference.py`** - Run batch inference with SGLang using the prepared batch
-- **`analyze_results.py`** - Analyze batch preparation output and generate statistics (optional)
-- **`sample_data.jsonl`** - Example input data for testing
 
 ## Quick Start
 
-### Step 1: Prepare Batch
+### Prepare Batch
 
 ```bash
 python prepare_batch.py \
-    --context_path sample_data.jsonl \
-    --output_path batch_output.jsonl
+    --context_path retrieval_results.jsonl \
+    --output_path optimized_batch.jsonl
 ```
 
 **Options:**
 - `--context_path`: Path to retrieval results (JSONL format)
 - `--output_path`: Where to save the prepared batch
-- `--use_gpu`: Use GPU for distance computation (optional)
+- `--use_gpu`: Use GPU for distance computation (recommended for >128 contexts)
 - `--linkage_method`: Clustering method - `average`, `complete`, or `single` (default: `average`)
-- `--alpha`: Weight for position differences in distance calculation (default: 0.005)
+- `--alpha`: Weight for position differences in distance calculation (default: 0.001)
 
-### Step 2: Run Inference
+### Run Inference with RAGPipeline
 
-```bash
-# Start SGLang server
-python -m sglang.launch_server \
-    --model-path Qwen/Qwen3-4B-Instruct-2507 \
-    --port 30000 \
-    --tp-size 1 \
-    --enable-metrics
+After preparing the batch, use `RAGPipeline` for inference:
 
-# Run batch inference
-python sglang_inference.py \
-    --model Qwen/Qwen3-4B-Instruct \
-    --batch_path batch_output.jsonl \
-    --corpus_path <path-to-corpus.jsonl>
-```
+```python
+from ragboost.pipeline import RAGPipeline, InferenceConfig
 
-**Options:**
-- `--model`: Model name/path
-- `--batch_path`: Path to prepared batch from Step 1
-- `--corpus_path`: Path to corpus JSONL with document texts
+pipeline = RAGPipeline(
+    retriever="bm25",
+    corpus_path="corpus.jsonl",
+    inference=InferenceConfig(
+        model_name="Qwen/Qwen2.5-7B-Instruct",
+        base_url="http://localhost:30000"
+    )
+)
 
-### Step 3: Analyze Results (Optional)
+# Run retrieval + optimization + generation in one call
+results = pipeline.run(
+    queries=["What is AI?", "What is ML?"],
+    generate_responses=True
+)
 
-```bash
-python analyze_results.py batch_output.jsonl
+# Access responses
+for result in results["generation_results"]:
+    print(result["generated_text"])
 ```
 
 ## Input Data Format
@@ -63,12 +59,7 @@ python analyze_results.py batch_output.jsonl
 The input JSONL file should have this format:
 
 ```json
-{
-    "qid": 0,
-    "text": "What is the capital of France?",
-    "answer": ["Paris"],
-    "top_k_doc_id": [123, 456, 789]
-}
+{"qid": 0, "text": "What is the capital of France?", "answer": ["Paris"], "top_k_doc_id": [123, 456, 789]}
 ```
 
 **Required fields:**
@@ -89,7 +80,7 @@ The prepared batch contains grouped queries optimized for inference:
     "items": [
         {
             "qid": 1,
-            "text": "Query text",
+            "question": "Query text",
             "answer": ["Answer"],
             "top_k_doc_id": [101, 102, 103],
             "orig_top_k_doc_id": [103, 101, 102]
@@ -100,47 +91,11 @@ The prepared batch contains grouped queries optimized for inference:
 
 ## What It Does
 
-1. **Intra-context reordering**: Reorders documents within each query for better relevance
+1. **Intra-context reordering**: Reorders documents within each query for better cache sharing
 2. **Inter-context clustering**: Groups similar queries using hierarchical clustering
 3. **Tree-based scheduling**: Organizes execution order to maximize KV cache hits
-4. **Optimized batching**: Creates batches that share maximum prefix tokens
-
-## Performance
-
-Typical improvements with RAGBoost:
-- 2-5x reduction in KV cache usage
-- 1.5-3x faster inference throughput
-- Up to 80% token reuse across queries
-
-## Example Workflow
-
-```bash
-# 1. Prepare batch from your retrieval results
-python prepare_batch.py \
-    --context_path /path/to/retrieval_results.jsonl \
-    --output_path optimized_batch.jsonl \
-    --use_gpu
-
-# 2. Start inference server
-python -m sglang.launch_server \
-    --model-path Qwen/Qwen2.5-32B-Instruct \
-    --port 30000 \
-    --tp-size 4 \
-    --enable-metrics \
-    --schedule-policy lpm
-
-# 3. Run optimized batch inference
-python sglang_inference.py \
-    --model Qwen/Qwen2.5-32B-Instruct \
-    --batch_path optimized_batch.jsonl \
-    --corpus_path /path/to/corpus.jsonl
-
-# 4. (Optional) Analyze the optimization
-python analyze_results.py optimized_batch.jsonl
-```
 
 ## See Also
 
-- Main README: `../../README.md`
-- Context Index: `../../ragboost/context_index/`
-- Context Ordering: `../../ragboost/context_ordering/`
+- [Pipeline API](../../docs/PIPELINE_API.md) - High-level Python API
+- [Batch Workflow](../../docs/BATCH_WORKFLOW.md) - Complete workflow guide

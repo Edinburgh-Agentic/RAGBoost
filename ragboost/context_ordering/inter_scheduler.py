@@ -55,19 +55,16 @@ class InterContextScheduler:
             groups_by_root, search_paths, reordered_contexts
         )
         
-        # Step 3: Calculate scores for groups (for compatibility with existing interface)
+        # Step 3: Build groups list sorted by size (largest first) for deterministic ordering
         all_groups_with_info = []
         for group_indices in sorted_groups:
-            # Score based on common prefix length * group size
-            score = self._calculate_group_score(reordered_contexts, group_indices)
-            all_groups_with_info.append((score, group_indices))
+            all_groups_with_info.append((0, group_indices))  # Score placeholder for API compatibility
         
-        # Step 4: Sort groups by score, then by first index for deterministic ordering
-        # (higher score is better, lower first index for ties)
-        all_groups_with_info.sort(key=lambda x: (-x[0], x[1][0] if x[1] else float('inf')))
+        # Sort groups by size (largest first), then by first index for deterministic ordering
+        all_groups_with_info.sort(key=lambda x: (-len(x[1]), x[1][0] if x[1] else float('inf')))
         
-        # Step 5: Create final ordering
-        final_index_mapping = [idx for score, group in all_groups_with_info for idx in group]
+        # Step 4: Create final ordering
+        final_index_mapping = [idx for _, group in all_groups_with_info for idx in group]
         
         scheduled_reordered = [reordered_contexts[i] for i in final_index_mapping]
         scheduled_originals = [original_contexts[i] for i in final_index_mapping]
@@ -138,43 +135,3 @@ class InterContextScheduler:
             sorted_groups.append(sorted_group)
         
         return sorted_groups
-
-    def _calculate_group_score(
-        self, 
-        contexts: List[List[int]], 
-        group_indices: List[int]
-    ) -> float:
-        """
-        Calculate a score for a group based on common prefix length and group size.
-        
-        Args:
-            contexts: List of all contexts
-            group_indices: Indices of contexts in this group
-            
-        Returns:
-            Score for the group (higher is better)
-        """
-        if len(group_indices) <= 1:
-            return 0
-
-        group_contexts = [contexts[idx] for idx in group_indices]
-        
-        try:
-            min_len = min(len(c) for c in group_contexts)
-        except (ValueError, TypeError):
-            return 0
-
-        if min_len == 0:
-            return 0
-            
-        # Calculate common prefix length across all group members
-        common_prefix_len = 0
-        for i in range(min_len):
-            first_item = group_contexts[0][i]
-            if all(c[i] == first_item for c in group_contexts[1:]):
-                common_prefix_len += 1
-            else:
-                break
-        
-        # Score = common_prefix_length * group_size
-        return common_prefix_len * len(group_indices)

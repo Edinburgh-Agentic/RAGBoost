@@ -22,18 +22,20 @@ Retrieve relevant documents for your queries using BM25 or vector search.
 BM25 provides lexical matching based on term frequency and document frequency:
 
 ```bash
-python -m examples.retrieval.run_bm25 \
+python -m examples.construct_rag_data.multihopRAG_bm25 \
   --query_path queries.jsonl \
   --corpus_path corpus.jsonl \
   --output_path retrieval_results.jsonl \
-  --top_k 10
+  --topk 20 \
+  --index_name my_index
 ```
 
 **Parameters:**
-- `--query_path`: Path to JSONL file with queries (each line: `{"qid": 0, "text": "question"}`)
-- `--corpus_path`: Path to JSONL file with documents (each line: `{"doc_id": 0, "text": "content"}`)
+- `--query_path`: Path to JSONL file with queries
+- `--corpus_path`: Path to JSONL file with documents
 - `--output_path`: Where to save retrieval results
-- `--top_k`: Number of documents to retrieve per query (default: 10)
+- `--topk`: Number of documents to retrieve per query (default: 20)
+- `--index_name`: Elasticsearch index name
 
 **Output Format:**
 ```json
@@ -64,16 +66,16 @@ python -m examples.construct_rag_data.multihopRAG_faiss \
   --query_path queries.jsonl \
   --output_path retrieval_results.jsonl \
   --index_path faiss.index \
-  --embedding_model Alibaba-NLP/gte-Qwen2-7B-instruct \
-  --top_k 10
+  --embedding_model_path Alibaba-NLP/gte-Qwen2-7B-instruct \
+  --topk 20 \
+  --port 30000
 ```
 
 **Parameters:**
 - `--index_path`: Where to save/load FAISS index
-- `--embedding_model`: Model for generating embeddings
-- `--hnsw_m`: HNSW graph connectivity (default: 32)
-- `--ef_construction`: Index build quality (default: 200)
-- `--ef_search`: Search quality vs speed tradeoff (default: 128)
+- `--embedding_model_path`: Model for generating embeddings
+- `--topk`: Number of documents to retrieve (default: 20)
+- `--port`: Embedding server port (default: 30000)
 
 See `examples/construct_rag_data/multihopRAG_faiss.py` for full implementation.
 
@@ -86,7 +88,7 @@ After retrieval, optimize contexts and run batch inference.
 Transform retrieval results into optimized batches for inference:
 
 ```bash
-python -m examples.batch_inference.prepare_batch \
+python examples/batch_inference/prepare_batch.py \
   --context_path retrieval_results.jsonl \
   --output_path optimized_batch.jsonl \
   --use_gpu \
@@ -152,20 +154,18 @@ python -m sglang.launch_server \
 
 **Run Batch Inference:**
 ```bash
-python -m examples.batch_inference.sglang_inference \
+python examples/batch_inference/sglang_inference.py \
   --model Qwen/Qwen2.5-32B-Instruct \
   --batch_path optimized_batch.jsonl \
   --corpus_path corpus.jsonl \
-  --output_path inference_results.jsonl \
-  --api_url http://localhost:30000
+  --result_file inference_results.jsonl
 ```
 
 **Parameters:**
 - `--model`: Model identifier (must match server)
 - `--batch_path`: Path to optimized batch from Step 2a
 - `--corpus_path`: Path to original corpus with document texts
-- `--output_path`: Where to save inference results
-- `--api_url`: SGLang server endpoint
+- `--result_file`: Where to save inference results
 
 **Prompt Format:**
 
@@ -202,42 +202,28 @@ The importance ranking section preserves the original retrieval order while docu
 
 ## Stage 3: Performance Analysis
 
-Analyze inference metrics and cache efficiency:
+Analyze batch optimization results and document sharing patterns:
 
 ```bash
-python -m examples.batch_inference.analyze_results \
-  --result_path inference_results.jsonl \
-  --output_dir analysis_output/ \
-  --compare_baseline  # Optional: compare with baseline without RAGBoost
+# Edit the results_path in analyze_results.py or copy your output to real_dataset_output.jsonl
+cp optimized_batch.jsonl examples/batch_inference/real_dataset_output.jsonl
+python examples/batch_inference/analyze_results.py
 ```
 
 **Generated Reports:**
 
-1. **Cache Hit Rate Analysis**
-   - Per-query and per-group hit rates
-   - Prefix length distribution
-   - Cache reuse patterns
+1. **Group Size Distribution**
+   - Number of queries per group
+   - Distribution of group sizes
 
-2. **Latency Reduction**
-   - Prefill latency comparison (RAGBoost vs baseline)
-   - Time-to-first-token improvements
-   - Total inference time savings
+2. **Document Sharing Analysis**
+   - Common documents across queries in each group
+   - Sharing ratio (potential cache reuse)
+   - Sample queries from top sharing groups
 
-3. **Throughput Improvements**
-   - Queries per second
-   - Tokens per second
-   - Effective batch size utilization
-
-4. **Accuracy Metrics**
-   - Answer quality comparison
-   - Impact of reordering on correctness
-   - Statistical significance tests
-
-**Output Files:**
-- `cache_analysis.json`: Detailed cache statistics
-- `latency_report.json`: Timing measurements
-- `accuracy_comparison.json`: Quality metrics
-- `summary.txt`: Human-readable summary
+**Output:**
+- Console output with detailed statistics
+- Useful for understanding optimization effectiveness before running inference
 
 ## Data Formats
 
@@ -326,17 +312,17 @@ See [GPU vs CPU Benchmarking Results](../README.md#gpu-vs-cpu-benchmarking-resul
 Integrate your own retrieval system:
 
 ```python
-from ragboost.retriever.base import BaseRetriever
-
-class CustomRetriever(BaseRetriever):
+class CustomRetriever:
+    """Custom retriever - just implement the retrieve() method."""
+    
     def retrieve(self, queries, top_k=10):
         # Your retrieval logic
         results = []
         for qid, query in enumerate(queries):
-            doc_ids = your_retrieval_function(query, top_k)
+            doc_ids = your_retrieval_function(query["text"], top_k)
             results.append({
-                "qid": qid,
-                "text": query,
+                "qid": query.get("qid", qid),
+                "text": query["text"],
                 "top_k_doc_id": doc_ids
             })
         return results
@@ -348,7 +334,7 @@ from ragboost.pipeline import RAGPipeline
 
 pipeline = RAGPipeline(
     retriever=CustomRetriever(),
-    corpus_data=corpus
+    corpus_path="corpus.jsonl"  # or corpus_data=corpus
 )
 ```
 

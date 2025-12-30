@@ -7,7 +7,7 @@ This guide explains how to benchmark RAGBoost performance on your machine.
 Run the benchmark script from the repository root:
 
 ```bash
-python benchmark.py
+python scripts/benchmark.py
 ```
 
 ## Benchmark Options
@@ -16,16 +16,16 @@ python benchmark.py
 
 ```bash
 # Run all benchmarks (recommended for first run)
-python benchmark.py
+python scripts/benchmark.py
 
 # Quick benchmark with smaller context sizes
-python benchmark.py --quick
+python scripts/benchmark.py --quick
 
 # Include GPU benchmarks
-python benchmark.py --gpu
+python scripts/benchmark.py --gpu
 
 # CPU only (skip GPU detection)
-python benchmark.py --cpu-only
+python scripts/benchmark.py --cpu-only
 ```
 
 ### Custom Context Sizes
@@ -34,13 +34,13 @@ Test with specific context counts:
 
 ```bash
 # Small scale test
-python benchmark.py --sizes 25 50 100
+python scripts/benchmark.py --sizes 25 50 100
 
 # Large scale test
-python benchmark.py --sizes 100 500 1000 2000
+python scripts/benchmark.py --sizes 100 500 1000 2000
 
 # Single size
-python benchmark.py --sizes 500
+python scripts/benchmark.py --sizes 500
 ```
 
 ## What Gets Benchmarked
