@@ -135,15 +135,17 @@ pipeline = RAGPipeline(
 
 ```python
 class MyRetriever:
+    """Custom retriever - just implement the retrieve() method."""
+    
     def retrieve(self, queries, top_k=20):
         # Your retrieval logic
         return [
             {
-                "qid": q["qid"],
+                "qid": q.get("qid", i),
                 "text": q["text"],
                 "top_k_doc_id": [...]  # Retrieved doc IDs
             }
-            for q in queries
+            for i, q in enumerate(queries)
         ]
 
 pipeline = RAGPipeline(

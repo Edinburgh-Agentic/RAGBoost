@@ -64,8 +64,17 @@ See the [main README](../../README.md) for accuracy benchmarks on MT-RAG.
 # GPU vs CPU distance computation
 python tests/test_gpu_distance_performance.py
 
-# End-to-end pipeline benchmark
-python tests/benchmark_pipeline.py --queries 1000 --top-k 20
+# Full benchmark suite (scaling, clustering, scheduling)
+python scripts/benchmark.py
+
+# Quick benchmark with smaller sizes
+python scripts/benchmark.py --quick
+
+# Include GPU benchmarks
+python scripts/benchmark.py --gpu
+
+# Custom context sizes
+python scripts/benchmark.py --sizes 100 500 1000 2000
 ```
 
 ---
