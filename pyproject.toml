@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ragboost"
-version = "0.0.1"
+version = "0.2.0"
 description = "Boosting Retrieval-Augmented Generation with Context Reordering"
 readme = "README.md"
 requires-python = ">=3.10"
