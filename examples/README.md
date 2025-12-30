@@ -46,7 +46,7 @@ python examples/stateless_batch_example.py
 python -m sglang.launch_server --model-path Qwen/Qwen2.5-7B-Instruct --port 30000
 
 # Terminal 2: Start RAGBoost server
-python -m ragboost.server.http_server --port 8765 --max-tokens 1000000 --sglang-url http://localhost:30000
+python -m ragboost.server.http_server --port 8765 --max-tokens 1000000 --infer-api-url http://localhost:30000
 
 # Terminal 3: Run example
 python examples/http_server_example.py

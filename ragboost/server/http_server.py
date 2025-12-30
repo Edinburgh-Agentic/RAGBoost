@@ -8,11 +8,11 @@ A FastAPI-based HTTP server that:
 4. Multi-turn conversation context deduplication
 
 Usage:
-    python -m ragboost.server.http_server --port 8765 --max-tokens 1000000 --sglang-url http://localhost:30000
+    python -m ragboost.server.http_server --port 8765 --max-tokens 1000000 --infer-api-url http://localhost:30000
 
 Environment variables (alternative to CLI args):
     RAGBOOST_MAX_TOKENS: Maximum tokens allowed in index
-    RAGBOOST_SGLANG_URL: SGLang backend URL (default: http://localhost:30000)
+    RAGBOOST_INFER_API_URL: Inference backend URL (default: http://localhost:30000)
 """
 
 import argparse
@@ -59,7 +59,7 @@ except ImportError:
 # Global state (initialized from env vars or CLI args)
 _index: Optional[LiveContextIndex] = None
 _max_tokens: Optional[int] = None
-_sglang_url: Optional[str] = None
+_infer_api_url: Optional[str] = None
 _aiohttp_session: Optional[aiohttp.ClientSession] = None
 _tokenizer = None  # AutoTokenizer instance for chat template
 _model_name: Optional[str] = None  # Model name for tokenizer
@@ -68,7 +68,7 @@ _stateless_mode: bool = False  # Stateless mode: just clustering/scheduling, no 
 
 def _init_config():
     """Initialize config from environment variables."""
-    global _max_tokens, _sglang_url, _tokenizer, _model_name, _stateless_mode
+    global _max_tokens, _infer_api_url, _tokenizer, _model_name, _stateless_mode
 
     # Check stateless mode first
     env_stateless = os.environ.get("RAGBOOST_STATELESS_MODE", "0")
@@ -79,8 +79,8 @@ def _init_config():
         if env_max_tokens:
             _max_tokens = int(env_max_tokens)
 
-    if _sglang_url is None:
-        _sglang_url = os.environ.get("RAGBOOST_SGLANG_URL", "http://localhost:30000")
+    if _infer_api_url is None:
+        _infer_api_url = os.environ.get("RAGBOOST_INFER_API_URL", "http://localhost:30000")
 
     # Initialize tokenizer for chat template if model is specified
     if _tokenizer is None:
@@ -188,7 +188,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"  stateless_mode: {_stateless_mode}")
     if not _stateless_mode:
         logger.info(f"  max_tokens: {_max_tokens}")
-    logger.info(f"  sglang_url: {_sglang_url}")
+    logger.info(f"  infer_api_url: {_infer_api_url}")
 
     _aiohttp_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3600))
     yield
@@ -842,17 +842,17 @@ async def proxy_completions(request: Request):
     To associate a request with a context, include 'request_id' in the request body.
     """
     # Ensure config is loaded
-    if _sglang_url is None:
+    if _infer_api_url is None:
         _init_config()
 
-    sglang_url = _sglang_url or os.environ.get(
-        "RAGBOOST_SGLANG_URL", "http://localhost:30000"
+    infer_api_url = _infer_api_url or os.environ.get(
+        "RAGBOOST_INFER_API_URL", "http://localhost:30000"
     )
 
-    if not sglang_url:
+    if not infer_api_url:
         raise HTTPException(
             status_code=503,
-            detail="SGLang URL not configured. Set RAGBOOST_SGLANG_URL env var or use --sglang-url.",
+            detail="Inference API URL not configured. Set RAGBOOST_INFER_API_URL env var or use --infer-api-url.",
         )
 
     try:
@@ -896,10 +896,10 @@ async def proxy_completions(request: Request):
             logger.info("Proxy: forwarding request without rid (no RAGBoost tracking)")
 
         # Forward to SGLang
-        sglang_api_url = f"{sglang_url}/v1/completions"
-        logger.debug(f"Proxying to {sglang_api_url}")
+        api_url = f"{infer_api_url}/v1/completions"
+        logger.debug(f"Proxying to {api_url}")
 
-        async with _aiohttp_session.post(sglang_api_url, json=body) as response:
+        async with _aiohttp_session.post(api_url, json=body) as response:
             result = await response.json()
 
             # Token tracking is handled by SGLang via RAGBOOST_INDEX_URL
@@ -932,21 +932,21 @@ async def proxy_sglang(path: str, request: Request):
     Forwards requests to SGLang backend without modification.
     """
     # Ensure config is loaded
-    if _sglang_url is None:
+    if _infer_api_url is None:
         _init_config()
 
-    sglang_url = _sglang_url or os.environ.get(
-        "RAGBOOST_SGLANG_URL", "http://localhost:30000"
+    infer_api_url = _infer_api_url or os.environ.get(
+        "RAGBOOST_INFER_API_URL", "http://localhost:30000"
     )
 
-    if not sglang_url:
+    if not infer_api_url:
         raise HTTPException(
             status_code=503,
-            detail="SGLang URL not configured. Set RAGBOOST_SGLANG_URL env var or use --sglang-url.",
+            detail="Inference API URL not configured. Set RAGBOOST_INFER_API_URL env var or use --infer-api-url.",
         )
 
     try:
-        target_url = f"{sglang_url}/v1/{path}"
+        target_url = f"{infer_api_url}/v1/{path}"
 
         if request.method == "GET":
             async with _aiohttp_session.get(target_url) as response:
@@ -974,10 +974,10 @@ def main():
         epilog="""
 Examples:
   # Live mode (with SGLang eviction callback integration):
-  python -m ragboost.server.http_server --port 8765 --sglang-url http://localhost:30000
+  python -m ragboost.server.http_server --port 8765 --infer-api-url http://localhost:30000
 
   # Stateless mode (just clustering/scheduling, no index maintained):
-  python -m ragboost.server.http_server --port 8765 --stateless --sglang-url http://localhost:30000
+  python -m ragboost.server.http_server --port 8765 --stateless --infer-api-url http://localhost:30000
 
 Live mode:
   - Build context index via POST /build
@@ -1006,10 +1006,10 @@ Stateless mode:
              "Use POST /schedule endpoint for batch reordering.",
     )
     parser.add_argument(
-        "--sglang-url",
+        "--infer-api-url",
         type=str,
         default="http://localhost:30000",
-        help="SGLang backend URL (default: http://localhost:30000)",
+        help="Inference backend URL (default: http://localhost:30000)",
     )
     parser.add_argument(
         "--log-level", default="info", choices=["debug", "info", "warning", "error"]
@@ -1032,15 +1032,15 @@ Stateless mode:
     # Set environment variables so they propagate to uvicorn workers
     if args.max_tokens is not None:
         os.environ["RAGBOOST_MAX_TOKENS"] = str(args.max_tokens)
-    os.environ["RAGBOOST_SGLANG_URL"] = args.sglang_url.rstrip("/")
+    os.environ["RAGBOOST_INFER_API_URL"] = args.infer_api_url.rstrip("/")
     os.environ["RAGBOOST_STATELESS_MODE"] = "1" if args.stateless else "0"
     if args.model:
         os.environ["RAGBOOST_MODEL_NAME"] = args.model
 
     # Also set global config for direct access
-    global _max_tokens, _sglang_url, _tokenizer, _model_name, _stateless_mode
+    global _max_tokens, _infer_api_url, _tokenizer, _model_name, _stateless_mode
     _max_tokens = args.max_tokens
-    _sglang_url = args.sglang_url.rstrip("/")
+    _infer_api_url = args.infer_api_url.rstrip("/")
     _stateless_mode = args.stateless
 
     # Initialize tokenizer for chat template
@@ -1065,7 +1065,7 @@ Stateless mode:
     else:
         logger.info(f"Starting RAGBoost Index Server on {args.host}:{args.port} (LIVE MODE)")
         logger.info("Eviction is driven by SGLang callback (RAGBOOST_INDEX_URL)")
-    logger.info(f"SGLang backend URL: {_sglang_url}")
+    logger.info(f"Inference backend URL: {_infer_api_url}")
 
     # Run server
     uvicorn.run(

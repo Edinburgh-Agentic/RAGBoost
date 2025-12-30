@@ -15,8 +15,8 @@
 
 ## News
 
-- [2025/05] 🔥 RAGBoost v0.2.0 released!
-- [2025/05] Paper published: [RAGBoost: Efficient Retrieval-Augmented Generation with Accuracy-Preserving Context Reuse](https://arxiv.org/abs/2511.03475)
+- [2025/12] Code is released! 
+- [2025/11] Paper published: [RAGBoost: Efficient Retrieval-Augmented Generation with Accuracy-Preserving Context Reuse](https://arxiv.org/abs/2511.03475)
 
 ## About
 
@@ -45,7 +45,9 @@ RAGBoost is a fast optimization system for Retrieval-Augmented Generation worklo
 | RadixCache | 62.56 | **68.46** | 75.12 |
 | **RAGBoost** | **64.27** | 68.12 | **75.81** |
 
-**Summary:** RAGBoost delivers **4-13x** improvements in cache hit rates and **1.5-3.5x** reductions in prefill latency for large-batch RAG workloads, while maintaining or improving accuracy.
+RAGBoost delivers **4-13x** improvements in cache hit rates and **1.5-3.5x** reductions in prefill latency for large-batch RAG workloads, while maintaining or improving accuracy.
+
+**Furthermore**, RAGBoost has been tested to reduce input token costs by around **36%** with GPT-5.2.
 
 See [Benchmarks](docs/reference/benchmarks.md) in the documentation for GPU vs CPU performance analysis and detailed benchmark methodology.
 

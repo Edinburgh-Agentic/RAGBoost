@@ -32,11 +32,11 @@ RUN uv venv --python ${PYTHON_VERSION}
 ENV PATH="/root/RAGBoost/.venv/bin:$PATH"
 
 # Make sure to install ninja to enable fast builds
-RUN uv pip install torch==2.8.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128 wheel packaging ninja \
+RUN uv pip install torch==2.9.1+cu128 --extra-index-url https://download.pytorch.org/whl/cu128 wheel packaging ninja \
     && uv cache clean
     
 # Install sglang
-RUN git clone -b v0.5.5.post2 https://github.com/sgl-project/sglang.git \
+RUN git clone -b v0.5.6 https://github.com/sgl-project/sglang.git \
     && cd sglang \
     && uv pip install -e "python" \
     && uv cache clean
@@ -50,5 +50,8 @@ COPY . /root/RAGBoost
 
 RUN uv pip install -e . -v \
     && uv cache clean
+
+# Apply SGLang patches for RAGBoost integration
+RUN bash /root/RAGBoost/patches/sglang/apply_patch.sh
 
 CMD ["sleep", "infinity"]

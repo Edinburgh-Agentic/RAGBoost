@@ -1,44 +1,55 @@
 """
-Example: SGLang Integration with RAGBoost HTTP Server
+Example: RAGBoost HTTP Server with Inference Backend Integration
 
-This shows exactly how to integrate SGLang with the RAGBoost index server.
+This shows how to use the RAGBoost HTTP server for online inference
+with automatic KV cache management.
 
 SETUP:
-1. Start RAGBoost server: python -m ragboost.server.http_server --port 8765
-2. Initialize index (run this once)
-3. Add eviction sync to SGLang (see below)
+1. Start SGLang (with RAGBoost patch):
+   RAGBOOST_INDEX_URL=http://localhost:8765 python -m sglang.launch_server \
+       --model-path Qwen/Qwen2.5-7B-Instruct --port 30000
+
+2. Start RAGBoost server:
+   python -m ragboost.server.http_server --port 8765 --infer-api-url http://localhost:30000
+
+3. Run this example:
+   python examples/http_server_example.py
 """
 
 import requests
-import time
-from ragboost.server.http_client import RAGBoostIndexClient
+import json
 
 
-# ============================================================================
-# STEP 1: Start the Server (Run in separate terminal)
-# ============================================================================
-
-"""
-Terminal 1:
-$ python -m ragboost.server.http_server --port 8765
-
-Output:
-INFO:     Started server process
-INFO:     Waiting for application startup.
-INFO:     RAGBoost Index Server starting...
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8765
-"""
+BASE_URL = "http://localhost:8765"
 
 
-# ============================================================================
-# STEP 2: Initialize the Index (Run once at startup)
-# ============================================================================
+def check_server():
+    """Check if RAGBoost server is running."""
+    try:
+        response = requests.get(f"{BASE_URL}/health", timeout=2.0)
+        health = response.json()
+        print(f"✓ Server status: {health['status']}")
+        return health
+    except Exception as e:
+        print(f"✗ Server not running: {e}")
+        print("\nPlease start the servers first:")
+        print("  # Terminal 1: Start SGLang with RAGBoost patch")
+        print("  RAGBOOST_INDEX_URL=http://localhost:8765 python -m sglang.launch_server \\")
+        print("      --model-path Qwen/Qwen2.5-7B-Instruct --port 30000")
+        print()
+        print("  # Terminal 2: Start RAGBoost server")
+        print("  python -m ragboost.server.http_server --port 8765 --infer-api-url http://localhost:30000")
+        return None
 
-def initialize_index():
-    """Initialize the RAGBoost index with your contexts."""
+
+def build_index():
+    """
+    Build the RAGBoost index with your contexts.
     
-    # Your RAG contexts (each context is a list of document IDs)
+    Each context is a list of document/chunk IDs that will be used together.
+    RAGBoost clusters similar contexts and returns request_ids for tracking.
+    """
+    # Example contexts (each is a list of document IDs for one query)
     contexts = [
         [1, 5, 10, 15, 20],     # Query 1 uses docs 1, 5, 10, 15, 20
         [2, 5, 11, 16, 21],     # Query 2 uses docs 2, 5, 11, 16, 21
@@ -47,240 +58,161 @@ def initialize_index():
         [1, 5, 10, 19, 24],     # Query 5 uses docs 1, 5, 10, 19, 24
     ]
     
-    print("Initializing RAGBoost index...")
+    print(f"Building index with {len(contexts)} contexts...")
     
     response = requests.post(
-        "http://localhost:8765/build",
+        f"{BASE_URL}/build",
         json={
             "contexts": contexts,
-            "initial_tokens_per_context": 512,  # Initial tokens per context
-            "use_gpu": True,                     # Use GPU if available
+            "initial_tokens_per_context": 0,
+            "use_gpu": False,
             "alpha": 0.005,
             "linkage_method": "average"
         },
-        timeout=30.0  # Building can take a while
+        timeout=30.0
     )
     
     result = response.json()
-    print(f"✓ Index initialized: {result}")
+    print(f"✓ Index built: {len(result['request_ids'])} request IDs")
+    print(f"  Reordered contexts for optimal cache sharing")
+    
     return result
 
 
-# ============================================================================
-# STEP 3: SGLang Integration - Add This to Your SGLang Code
-# ============================================================================
+def make_inference_request(request_id: str, prompt: str):
+    """
+    Make an inference request through RAGBoost proxy.
+    
+    The request_id links this request to the pre-built context index,
+    enabling automatic KV cache tracking and eviction coordination.
+    """
+    response = requests.post(
+        f"{BASE_URL}/v1/completions",
+        json={
+            "prompt": prompt,
+            "max_tokens": 100,
+            "temperature": 0.0,
+            "request_id": request_id  # Links to RAGBoost index
+        },
+        timeout=60.0
+    )
+    
+    return response.json()
 
-class SGLangScheduler_WithRAGBoost:
+
+def get_stats():
+    """Get current index statistics."""
+    response = requests.get(f"{BASE_URL}/stats", timeout=5.0)
+    return response.json()
+
+
+def stateless_schedule():
     """
-    Example SGLang scheduler with RAGBoost HTTP client integration.
+    Use stateless mode for one-off batch scheduling.
     
-    This is what your actual SGLang scheduler should look like.
+    This doesn't maintain any index - just clusters and reorders contexts.
+    Useful for offline batch processing.
     """
+    contexts = [
+        [1, 5, 10, 15, 20],
+        [2, 5, 11, 16, 21],
+        [1, 5, 12, 17, 22],
+    ]
     
-    def __init__(self, model_config, cache_config):
-        """Initialize scheduler with RAGBoost client."""
-        
-        # ... your existing SGLang initialization ...
-        self.tree_cache = None  # Your RadixCache
-        
-        # NEW: Initialize RAGBoost HTTP client
-        try:
-            self.ragboost_client = RAGBoostIndexClient(
-                base_url="http://localhost:8765",
-                timeout=1.0  # 1 second timeout for low latency
+    print(f"Scheduling {len(contexts)} contexts (stateless)...")
+    
+    response = requests.post(
+        f"{BASE_URL}/schedule",
+        json={
+            "contexts": contexts,
+            "alpha": 0.005,
+            "linkage_method": "average"
+        },
+        timeout=30.0
+    )
+    
+    result = response.json()
+    print(f"✓ Scheduled into {len(result['groups'])} groups")
+    
+    return result
+
+
+def main():
+    """Complete example workflow."""
+    print("=" * 70)
+    print("RAGBoost HTTP Server Example")
+    print("=" * 70)
+    print()
+    
+    # Check server
+    health = check_server()
+    if not health:
+        return
+    
+    print()
+    
+    # Build index
+    print("--- Building Index ---")
+    build_result = build_index()
+    request_ids = build_result["request_ids"]
+    print()
+    
+    # Show reordering
+    print("--- Reordered Contexts ---")
+    for i, (rid, ctx) in enumerate(zip(request_ids[:3], build_result["reordered_contexts"][:3])):
+        print(f"  {rid}: {ctx}")
+    if len(request_ids) > 3:
+        print(f"  ... and {len(request_ids) - 3} more")
+    print()
+    
+    # Make inference requests (if inference backend is available)
+    print("--- Inference Requests ---")
+    try:
+        for i, rid in enumerate(request_ids[:2]):
+            print(f"Request {i+1} (rid={rid[:8]}...):")
+            result = make_inference_request(
+                request_id=rid,
+                prompt=f"Answer question {i+1} based on the provided documents."
             )
             
-            # Check if server is ready
-            if self.ragboost_client.is_ready():
-                print("✓ RAGBoost index server connected and ready")
+            if "choices" in result:
+                text = result["choices"][0].get("text", "")[:100]
+                print(f"  Response: {text}...")
+            elif "error" in result:
+                print(f"  Error: {result['error']}")
             else:
-                print("⚠ RAGBoost index server not ready")
-                self.ragboost_client = None
-        
-        except Exception as e:
-            print(f"⚠ Could not connect to RAGBoost server: {e}")
-            self.ragboost_client = None
-    
-    def evict_tokens(self, num_tokens):
-        """
-        Evict tokens from cache.
-        
-        THIS IS THE METHOD YOU NEED TO MODIFY IN SGLANG.
-        Just add the ragboost_client.evict() call.
-        """
-        
-        # 1. Original SGLang eviction
-        print(f"SGLang evicting {num_tokens} tokens from tree_cache...")
-        # self.tree_cache.evict(num_tokens)  # Your actual eviction code
-        
-        # 2. NEW: Sync with RAGBoost index (THIS IS THE ONLY LINE TO ADD!)
-        if self.ragboost_client is not None:
-            try:
-                result = self.ragboost_client.evict(num_tokens)
-                if result and result.get("status") == "success":
-                    print(f"✓ RAGBoost evicted {result['tokens_evicted']} tokens, "
-                          f"removed {len(result['evicted_node_ids'])} nodes")
-                else:
-                    print(f"⚠ RAGBoost eviction failed: {result}")
-            except Exception as e:
-                print(f"⚠ RAGBoost eviction sync error: {e}")
-        else:
-            print("⚠ RAGBoost client not available, skipping sync")
-
-
-# ============================================================================
-# MINIMAL INTEGRATION - Even Simpler
-# ============================================================================
-
-class SGLangScheduler_Minimal:
-    """Absolute minimal integration - just HTTP POST."""
-    
-    def __init__(self):
-        self.ragboost_url = "http://localhost:8765"
-        self.tree_cache = None
-    
-    def evict_tokens(self, num_tokens):
-        """Evict with minimal integration."""
-        
-        # SGLang eviction
-        # self.tree_cache.evict(num_tokens)
-        
-        # RAGBoost sync (ONE LINE!)
-        try:
-            requests.post(
-                f"{self.ragboost_url}/evict",
-                json={"num_tokens": num_tokens},
-                timeout=1.0
-            )
-        except Exception:
-            pass  # Silent failure - don't block SGLang
-
-
-# ============================================================================
-# COMPLETE WORKING EXAMPLE
-# ============================================================================
-
-def complete_example():
-    """Complete working example with server interaction."""
-    
-    print("=" * 80)
-    print("RAGBoost HTTP Server Integration Example")
-    print("=" * 80)
-    print()
-    
-    # Check if server is running
-    try:
-        response = requests.get("http://localhost:8765/health", timeout=2.0)
-        health = response.json()
-        print(f"✓ Server is running: {health}")
+                print(f"  Result: {result}")
+            print()
     except Exception as e:
-        print(f"✗ Server is not running: {e}")
-        print("\nPlease start the server first:")
-        print("  python -m ragboost.server.http_server --port 8765")
-        return
-    
+        print(f"  ⚠ Inference backend not available: {e}")
+        print("  (This is expected if SGLang is not running)")
     print()
     
-    # Initialize index if not already initialized
-    if health.get("status") != "ready":
-        print("Index not initialized, building...")
-        initialize_index()
-    else:
-        print("✓ Index already initialized")
-    
+    # Show stats
+    print("--- Index Stats ---")
+    try:
+        stats = get_stats()
+        evict_stats = stats.get("eviction_stats", {})
+        print(f"  Total nodes: {evict_stats.get('total_nodes', 'N/A')}")
+        print(f"  Total tokens: {evict_stats.get('total_tokens', 'N/A')}")
+    except Exception as e:
+        print(f"  Could not get stats: {e}")
     print()
     
-    # Create client
-    print("Creating RAGBoost client...")
-    client = RAGBoostIndexClient("http://localhost:8765")
-    
-    if not client.is_ready():
-        print("✗ Index not ready")
-        return
-    
-    print("✓ Client connected")
+    # Stateless scheduling example
+    print("--- Stateless Scheduling ---")
+    try:
+        schedule_result = stateless_schedule()
+        for group in schedule_result["groups"]:
+            print(f"  Group {group['group_id']}: {group['group_size']} contexts")
+    except Exception as e:
+        print(f"  Could not schedule: {e}")
     print()
     
-    # Get initial stats
-    print("--- Initial Stats ---")
-    stats = client.get_stats()
-    if stats:
-        evict_stats = stats['eviction_stats']
-        print(f"Total nodes: {evict_stats['total_nodes']}")
-        print(f"Total tokens: {evict_stats['total_tokens']}")
-    print()
-    
-    # Simulate eviction (this is what SGLang would do)
-    print("--- Simulating Cache Eviction ---")
-    num_tokens_to_evict = 1024
-    
-    print(f"1. SGLang evicts {num_tokens_to_evict} tokens from tree_cache")
-    # (In real SGLang: self.tree_cache.evict(num_tokens_to_evict))
-    
-    print(f"2. Sync with RAGBoost index...")
-    result = client.evict(num_tokens_to_evict)
-    
-    if result and result.get("status") == "success":
-        print(f"   ✓ Evicted {result['tokens_evicted']} tokens")
-        print(f"   ✓ Removed {len(result['evicted_node_ids'])} nodes")
-        print(f"   ✓ Remaining: {result['tokens_remaining']} tokens in {result['nodes_remaining']} nodes")
-    else:
-        print(f"   ✗ Eviction failed: {result}")
-    
-    print()
-    
-    # Get final stats
-    print("--- Final Stats ---")
-    stats = client.get_stats()
-    if stats:
-        evict_stats = stats['eviction_stats']
-        print(f"Total nodes: {evict_stats['total_nodes']}")
-        print(f"Total tokens: {evict_stats['total_tokens']}")
-    
-    print()
-    print("=" * 80)
+    print("=" * 70)
     print("✓ Example complete!")
-    print()
-    print("To integrate with SGLang:")
-    print("1. Add: from ragboost.server.http_client import RAGBoostIndexClient")
-    print("2. In __init__: self.ragboost_client = RAGBoostIndexClient(...)")
-    print("3. In evict: self.ragboost_client.evict(num_tokens)")
-    print("=" * 80)
-
-
-# ============================================================================
-# WHAT TO ADD TO SGLANG - COPY THIS
-# ============================================================================
-
-"""
-╔══════════════════════════════════════════════════════════════════════════╗
-║  COPY THIS INTO YOUR SGLANG SCHEDULER CODE                              ║
-╚══════════════════════════════════════════════════════════════════════════╝
-
-At the top of your file:
-────────────────────────────────────────────────────────────────────────────
-from ragboost.server.http_client import RAGBoostIndexClient
-
-In your __init__ method:
-────────────────────────────────────────────────────────────────────────────
-try:
-    self.ragboost_client = RAGBoostIndexClient("http://localhost:8765", timeout=1.0)
-    if not self.ragboost_client.is_ready():
-        self.ragboost_client = None
-except:
-    self.ragboost_client = None
-
-In your eviction method (wherever you call tree_cache.evict):
-────────────────────────────────────────────────────────────────────────────
-self.tree_cache.evict(num_tokens)
-
-# Add this line:
-if self.ragboost_client:
-    self.ragboost_client.evict(num_tokens)
-
-That's it! Just 3 simple additions.
-"""
+    print("=" * 70)
 
 
 if __name__ == "__main__":
-    complete_example()
+    main()

@@ -104,7 +104,7 @@ Stateful mode maintains a **live index** that tracks tokens and synchronizes wit
 python -m ragboost.server.http_server \
     --port 8765 \
     --max-tokens 1000000 \ #  the same as sglang's max_total_num_tokens
-    --sglang-url http://localhost:30000
+    --infer-api-url http://localhost:30000
 ```
 
 ### Step 1: Build the Index
@@ -202,7 +202,7 @@ patch -p1 < /path/to/RAGBoost/patches/sglang_ragboost.patch
 # Start RAGBoost server first
 python -m ragboost.server.http_server \
     --port 8765 \
-    --sglang-url http://localhost:30000
+    --infer-api-url http://localhost:30000
 
 # Start SGLang with RAGBoost integration enabled
 RAGBOOST_INDEX_URL=http://localhost:8765 python -m sglang.launch_server \
