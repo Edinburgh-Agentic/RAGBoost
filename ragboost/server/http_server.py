@@ -8,7 +8,7 @@ A FastAPI-based HTTP server that:
 4. Multi-turn conversation context deduplication
 
 Usage:
-    python -m ragboost.server.http_server --port 8765 --max-tokens 1000000 --infer-api-url http://localhost:30000
+    python -m ragboost.server.http_server --port 8765 --infer-api-url http://localhost:30000
 
 Environment variables (alternative to CLI args):
     RAGBOOST_MAX_TOKENS: Maximum tokens allowed in index

@@ -18,7 +18,7 @@ Stateless mode provides **optimal batch ordering** without tracking cache state.
 ### Start the Server
 
 ```bash
-python -m ragboost.server.http_server --port 8765 --stateless
+python -m ragboost.server.http_server --port 8765 --stateless --infer-api-url http://localhost:30000
 ```
 
 ### Client Usage
@@ -103,7 +103,6 @@ Stateful mode maintains a **live index** that tracks tokens and synchronizes wit
 ```bash
 python -m ragboost.server.http_server \
     --port 8765 \
-    --max-tokens 1000000 \ #  the same as sglang's max_total_num_tokens
     --infer-api-url http://localhost:30000
 ```
 
@@ -155,13 +154,15 @@ response = requests.post("http://localhost:8765/update_tokens", json={
 })
 ```
 
-### Step 4: Eviction Sync
+### Step 4: Eviction Sync (Automatic)
 
-When SGLang evicts cache, sync with RAGBoost:
+When using the patched SGLang (see [SGLang Integration](#sglang-integration) below), eviction sync is **automatic**. SGLang's radix cache calls the `/evict` endpoint with evicted `request_ids` via a callback.
+
+If you need manual eviction (e.g., for testing), use:
 
 ```python
 requests.post("http://localhost:8765/evict", json={
-    "num_tokens": num_tokens
+    "request_ids": ["request_id_1", "request_id_2"]
 })
 ```
 
@@ -173,9 +174,21 @@ RAGBoost integrates with SGLang via the `RAGBOOST_INDEX_URL` environment variabl
 
 ### Quick Start
 
-**Option A: Use Pre-Patched Files (Recommended)**
+**Option A: Use Patch Script (Recommended)**
 
-Copy the patched SGLang files from RAGBoost:
+Run the patch script to automatically install the patched files:
+
+```bash
+# From RAGBoost root directory
+bash patches/sglang/apply_patch.sh
+```
+
+This script will:
+- Find your SGLang installation automatically
+- Backup original files
+- Copy patched files to the correct location
+
+**Option B: Manual Copy**
 
 ```bash
 # Copy patched files to your SGLang installation
@@ -186,14 +199,6 @@ cp patches/sglang/common.py $SGLANG_PATH/srt/mem_cache/
 cp patches/sglang/radix_cache.py $SGLANG_PATH/srt/mem_cache/
 
 echo "SGLang patched successfully!"
-```
-
-**Option B: Apply Patch File**
-
-```bash
-# From RAGBoost root directory
-cd $(python -c "import sglang; print(sglang.__path__[0])")/../..
-patch -p1 < /path/to/RAGBoost/patches/sglang_ragboost.patch
 ```
 
 ### Start SGLang with RAGBoost
