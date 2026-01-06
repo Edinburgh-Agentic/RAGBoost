@@ -27,6 +27,10 @@ RAGBoost is a fast optimization system for Retrieval-Augmented Generation worklo
 3. **Strong Compatibility**: Strong compatibility with existing RAG libraries (HippoRAG), KV cache optimization engine (LMCache), and Inference engines (vLLM and SGLang). Both single-node and multi-node deployment!
 4. **Widely Tested**: Tested with a wide range of RAG and Agentic AI applications.
 
+<div align="center">
+  <img src="assets/system.png" alt="RAGBoost Logo" width="900"/>
+</div>
+
 ## Benchmark and Performance
 
 ### System Performance
