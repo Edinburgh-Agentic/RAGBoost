@@ -76,10 +76,6 @@ def apply_chat_template(
 
 
 PROMPT_TEMPLATE = '''
-**Note**:
-1. Please answer within 10 words or fewer. If the answer is Yes or No, just say Yes or No
-2. Do not include any special characters like <answer> or <answer/>."
-
 With provided related documents:
 <documents_section>
 {docs_section}
@@ -95,14 +91,13 @@ Please read the documents in the following ranking and answer the question:
 {importance_ranking}
 </importance_ranking_section>
 
-Please prioritize information from higher-ranked documents to answer the question.
+**Note**:
+1. Please prioritize information from higher-ranked documents to answer the question.
+2. Please directly answer the question within 10 words or fewer without description. If the answer is Yes or No, just say Yes or No
+3. Do not include any special characters like <answer> or <answer/>."
 '''
 
-BASELINE_PROMPT='''
-**Note**:
-1. Please answer within 10 words or fewer. If the answer is Yes or No, just say Yes or No
-2. Do not include any special characters like <answer> or <answer/>."
-
+PROMPT_TEMPLATE_NO_RANKING = '''
 With provided related documents:
 <documents_section>
 {docs_section}
@@ -112,6 +107,26 @@ Answer the question:
 <question_section>
 {question}
 </question_section>
+
+**Note**:
+1. Please directly answer the question within 10 words or fewer without description. If the answer is Yes or No, just say Yes or No
+2. Do not include any special characters like <answer> or <answer/>."
+'''
+
+BASELINE_PROMPT='''
+With provided related documents:
+<documents_section>
+{docs_section}
+</documents_section>
+
+Answer the question:
+<question_section>
+{question}
+</question_section>
+
+**Note**:
+1. Please directly answer the question within 10 words or fewer without description. If the answer is Yes or No, just say Yes or No
+2. Do not include any special characters like <answer> or <answer/>."啊
 '''
 
 def prompt_generator(
@@ -233,6 +248,72 @@ def prompt_generator_baseline(
         # importance_ranking = format_importance(original_doc_order)
 
         prompt = BASELINE_PROMPT.format(
+            docs_section=docs_section,
+            question=question
+        )
+        
+        # Apply chat template if requested
+        if apply_template:
+            prompt = apply_chat_template(
+                prompt,
+                tokenizer=tokenizer,
+                model_name=model_name,
+                system_prompt=system_prompt
+            )
+
+        prompts.append(prompt)
+        
+    return prompts, qids, answers
+
+
+def prompt_generator_optimized_no_ranking(
+    chunk_id_text_dict: Dict[Any, str],
+    reordered_inputs: List[Dict[str, Any]],
+    tokenizer=None,
+    model_name: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    apply_template: bool = False
+) -> Tuple[List[str], List[Any], List[Any]]:
+    """
+    Generate optimized prompts (reordered docs) WITHOUT importance ranking section.
+    Uses cache-optimized document order but doesn't tell the model about original ranking.
+    
+    Args:
+        chunk_id_text_dict: Mapping from document ID to document text
+        reordered_inputs: List of reordered input dictionaries (from optimize())
+        tokenizer: Pre-loaded tokenizer instance for chat template (optional)
+        model_name: Model name to load tokenizer from (optional)
+        system_prompt: Optional system prompt for chat template
+        apply_template: Whether to apply chat template (default False)
+    
+    Returns:
+        Tuple of (prompts, qids, answers)
+    """
+    def format_docs(reordered_doc_ids):
+        """Format documents section using doc IDs"""
+        docs_section = ""
+        for doc_id in reordered_doc_ids:
+            if doc_id in chunk_id_text_dict:
+                content = chunk_id_text_dict[doc_id]
+                docs_section += f"[Doc_{doc_id}] {content}\n\n"
+            elif str(doc_id) in chunk_id_text_dict:
+                content = chunk_id_text_dict[str(doc_id)]
+                docs_section += f"[Doc_{doc_id}] {content}\n\n"
+            else:
+                print(f"Warning: Doc_{doc_id} not found")
+        return docs_section.strip()
+    
+    prompts = []
+    qids = [i["qid"] for i in reordered_inputs]
+    answers = [i["answer"] for i in reordered_inputs]
+    
+    for reordered_input in reordered_inputs:
+        reordered_doc_ids = reordered_input['top_k_doc_id']
+        question = reordered_input['question']
+
+        docs_section = format_docs(reordered_doc_ids)
+
+        prompt = PROMPT_TEMPLATE_NO_RANKING.format(
             docs_section=docs_section,
             question=question
         )
